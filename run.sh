@@ -10,4 +10,5 @@ src/utils.hpp \
 -Wall \
 -L/usr/local/lib/ \
 -lta_lib \
+-I/usr/local/include/ \
 && ./program
