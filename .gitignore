@@ -30,3 +30,9 @@
 *.exe
 *.out
 *.app
+
+# Dataset directories
+processed
+unprocessed
+
+program
