@@ -10,7 +10,7 @@
 
 int main() {
     std::cout << "Running...\n";
-    TAProcessor taProcessor("./unprocessed", "./processed");
+    TAProcessor taProcessor("./unprocessed", "./processed", 14);
     taProcessor.exec();
     return 0;
 }

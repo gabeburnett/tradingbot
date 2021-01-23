@@ -6,35 +6,31 @@
 std::mutex processedMutex;        
 std::unordered_map<std::string, std::vector<double>> processedMap;
 
-double testCalc(OHLCV *block, size_t index) {
-    int startIndex = index - 14;
-    // if (startIndex < 0) return 0; // Don't store values that are -1, we only want to store ticks with full OHLC and TA data.
-    // const double* close = &block->close[0];
-    const double close[16] = {0};
+double testCalc(const OHLCV *block, size_t blockIndex) {    
     double outReal = 0;
     int outBegIdx = 0;
-    int outNBElement = 0; 
-    std::cout << "start: " << startIndex << " end: " << index << " real len: " << block->close.size() << "\n";
-    if (TA_RSI(0, 14, close, TA_INTEGER_DEFAULT, &outBegIdx, &outNBElement, &outReal) != TA_SUCCESS) {
+    int outNBElement = 0;
+    if (TA_RSI(blockIndex, blockIndex, block->close, 14, &outBegIdx, &outNBElement, &outReal) != TA_SUCCESS) {
         throw std::logic_error("Failed to calculate indicator: RSI.");
     }
-    // } this causes stack smashing, maybe close array is casuing it
-    // for (int i = 0; i < )
-    return 133337;
+    return outReal;
 }
 
-void workerThread(CalculateIndicator calc, OHLCV block) {
-    for (size_t i = 0; i < block.open.size(); i++) {
-        double result = calc(&block, i);
+void workerThread(CalculateIndicator calc, OHLCV block, int minTicksForAllTA) {
+    for (size_t i = minTicksForAllTA; i < OHLCV_BLOCK_SIZE; i++) {
+        if (block.close[i] == 0) break; // Stop loop once initialized values are reached
+        double res = calc(&block, i);
         processedMutex.lock();
-        std::cout << "Result: " << result << " at " << i << "\n";
+        std::cout << "Result: " << res << " at " << i << " using: " << block.open[i] << "\n";
         processedMutex.unlock();
     }
 }
 
-TAProcessor::TAProcessor(std::string unprocessedPath, std::string processedPath) {
+TAProcessor::TAProcessor(std::string unprocessedPath, std::string processedPath, int minTicksForAllTA) {
     this->unprocessedPath = unprocessedPath;
     this->processedPath = processedPath;
+    this->minTicksForAllTA = minTicksForAllTA;
+
     this->addIndictator(testCalc);
 }
 
@@ -42,44 +38,68 @@ void TAProcessor::addIndictator(CalculateIndicator func) {
     this->taFuncs.push_back(func);
 }
 
+void TAProcessor::prepareArray(double *arr) {
+    int startCopyIndex = OHLCV_BLOCK_SIZE - minTicksForAllTA;
+    memcpy(arr, arr + startCopyIndex, sizeof(double) * minTicksForAllTA);
+    memset(arr + minTicksForAllTA, 0x00, OHLCV_BLOCK_SIZE - minTicksForAllTA);
+}
+
 void TAProcessor::parseFile(std::string path) {
     std::ifstream infile(path);
     std::string line;
     std::vector<std::string> arr = {};
-    int a = 0;
+    int blockIndex = 0;
     while(std::getline(infile, line)) {
-        a++;
-        if (splitNumbers(&arr, line, ',') && arr.size() == 6) {
-            open.push_back(std::stof(arr[1]));
-            high.push_back(std::stof(arr[2]));
-            low.push_back(std::stof(arr[3]));
-            close.push_back(std::stof(arr[4]));
-            volume.push_back(std::stof(arr[5]));
+        if (blockIndex == OHLCV_BLOCK_SIZE) {
+            processBlock();
+            blockIndex = minTicksForAllTA;
+            prepareArray(open);
+            prepareArray(high);
+            prepareArray(low);
+            prepareArray(close);
+            prepareArray(volume);
+            continue;
         }
-        std::cout << "len: " << open.size() << "\n";
-        if (a > 100) break;
+
+        if (splitNumbers(&arr, line, ',') && arr.size() == 6) {
+            open[blockIndex] = std::stod(arr[1]);
+            high[blockIndex] = std::stod(arr[2]);
+            low[blockIndex] = std::stod(arr[3]);
+            close[blockIndex] = std::stod(arr[4]);
+            volume[blockIndex] = std::stod(arr[5]);
+            blockIndex++;
+            std::cout << "loading: " << blockIndex << " on block: " << block << "\n";
+        }
     }
     infile.close();
 }
 
+void TAProcessor::clearArrays() {
+    memset(open, 0x00, OHLCV_BLOCK_SIZE);
+    memset(high, 0x00, OHLCV_BLOCK_SIZE);
+    memset(low, 0x00, OHLCV_BLOCK_SIZE);
+    memset(close, 0x00, OHLCV_BLOCK_SIZE);
+    memset(volume, 0x00, OHLCV_BLOCK_SIZE);
+}
+
 void TAProcessor::exec() {
     for (const auto & entry : std::filesystem::directory_iterator("./unprocessed")) {
-        open.clear();
-        high.clear();
-        low.clear();
-        close.clear();
-        volume.clear();
         parseFile(entry.path());
-        processBlock();
     }
 }
 
 void TAProcessor::processBlock() {
+    OHLCV block = {};
+    memcpy(block.open, open, sizeof(open));
+    memcpy(block.high, high, sizeof(high));
+    memcpy(block.low, low, sizeof(low));
+    memcpy(block.close, close, sizeof(close));
+    memcpy(block.volume, volume, sizeof(volume));
+
     int threadSize = 1;
     std::thread threads[threadSize];
     for (int i = 0; i < threadSize; i++) {
-        OHLCV block = { open, high, low, close, volume };
-        threads[i] = std::thread(workerThread, taFuncs[0], block);
+        threads[i] = std::thread(workerThread, taFuncs[0], block, minTicksForAllTA);
     }
 
     for (auto &thread : threads) {
