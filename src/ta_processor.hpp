@@ -10,7 +10,18 @@
 #include <filesystem>
 #include "utils.hpp"
 
-#define OHLCV_BLOCK_SIZE 1000
+struct OHLCV {
+    double *open;
+    double *high;
+    double *low;
+    double *close;
+    double *volume;
+    size_t maxTicks;
+};
+
+typedef struct OHLCV OHLCV;
+
+typedef double (*CalculateIndicator) (const OHLCV *block, size_t blockIndex);
 
 struct TAFunction {
     std::string name;
@@ -19,41 +30,34 @@ struct TAFunction {
 
 typedef struct TAFunction TAFunction;
 
-struct OHLCV {
-    double open[OHLCV_BLOCK_SIZE] = {0};
-    double high[OHLCV_BLOCK_SIZE] = {0};
-    double low[OHLCV_BLOCK_SIZE] = {0};
-    double close[OHLCV_BLOCK_SIZE] = {0};
-    double volume[OHLCV_BLOCK_SIZE] = {0};
-};
-
-typedef struct OHLCV OHLCV;
-
-typedef double (*CalculateIndicator) (const OHLCV *block, size_t blockIndex);
-
 class TAProcessor {
     public:
-        TAProcessor(std::string unprocessedPath, std::string processedPath, int minTicksForAllTA);
+        TAProcessor(std::string unprocessedPath, std::string processedPath, int minTicksForAllTA, size_t maxTicks);
+        ~TAProcessor();
         void addIndictator(std::string taName, CalculateIndicator func);
         void exec();
     
     private:
         int minTicksForAllTA;
-        double open[OHLCV_BLOCK_SIZE] = {0};
-        double high[OHLCV_BLOCK_SIZE] = {0};
-        double low[OHLCV_BLOCK_SIZE] = {0};
-        double close[OHLCV_BLOCK_SIZE] = {0};
-        double volume[OHLCV_BLOCK_SIZE] = {0};
+        double *open;
+        double *high;
+        double *low;
+        double *close;
+        double *volume;
+        size_t maxTicks;
+
 
         std::unordered_map<std::string, CalculateIndicator> taFuncs;
         std::string unprocessedPath;
         std::string processedPath;
 
+        std::vector<OHLCV*> copyData(size_t copies);
+        void destroyData(std::vector<OHLCV*> pointers);
         void prepareArray(double *arr);
         void processBlock();
         void parseFile(std::string path);
         void clearArrays();
-        void prepareStructures();
+        void prepareNextBlock();
         void appendProcessedBlock(std::string path);
 };
 

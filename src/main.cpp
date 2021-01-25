@@ -10,14 +10,15 @@
 
 int main() {
     std::cout << "Running...\n";
-    // TAProcessor taProcessor("./unprocessed", "./processed", 14);
-    // taProcessor.exec();
-
-    std::unordered_map<std::string, std::array<double, OHLCV_BLOCK_SIZE>> asd = {};
-    asd["rsi"] = {};
-    asd["rsi"][420] = 1337;
-    std::cout << asd["rsi"].size() << "\n";
-    std::cout << asd["rsi"][420] << "\n";
+    TAProcessor taProcessor("./unprocessed", "./processed", 14, 100);
+    taProcessor.exec();
+    // double error[1800000] = {0};
+    // std::cout << "len:" << test.size() << "\n";
+    // std::unordered_map<std::string, std::array<double, OHLCV_BLOCK_SIZE>> asd = {};
+    // asd["rsi"] = {};
+    // asd["rsi"][420] = 1337;
+    // std::cout << asd["rsi"].size() << "\n";
+    // std::cout << asd["rsi"][420] << "\n";
     return 0;//
 }
 
