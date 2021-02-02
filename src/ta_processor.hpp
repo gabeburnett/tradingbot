@@ -10,6 +10,16 @@
 #include <filesystem>
 #include "utils.hpp"
 
+struct DynDoubleArray {
+    double *array;
+    size_t length;
+};
+
+typedef struct DynDoubleArray DynDoubleArray;
+
+extern std::mutex processedMutex;
+extern std::unordered_map<std::string, DynDoubleArray> processedMap;
+
 struct OHLCV {
     double *open;
     double *high;
@@ -58,6 +68,7 @@ class TAProcessor {
         void parseFile(std::string path);
         void clearArrays();
         void prepareNextBlock();
+        void appendHeader(std::string path);
         void appendProcessedBlock(std::string path);
 };
 

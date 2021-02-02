@@ -6,6 +6,6 @@
 #include <sstream>
 #include <regex>
 
-bool splitNumbers(std::vector<std::string> *values, std::string str, char delimiter);
+bool split(std::vector<std::string> *values, std::string str, char delimiter, bool isNumber);
 
 #endif
