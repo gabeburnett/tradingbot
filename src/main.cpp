@@ -32,14 +32,14 @@ class TestAlgo: public BacktestThread {
 int main() {
     std::cout << "Running...\n";
 
-    // TAProcessor taProcessor("./unprocessed", "./processed", 14, 100000);
-    // taProcessor.exec();
+    TAProcessor taProcessor("./unprocessed", "./processed", 14, 100000);
+    taProcessor.exec();
 
-    BacktestManager manager(1337);
-    manager.addPath("tsla", "./processed/btcusd.csv");
-    manager.createInstances<TestAlgo>();
+    // BacktestManager manager(1337);
+    // manager.addPath("tsla", "./processed/btcusd.csv");
+    // manager.createInstances<TestAlgo>();
 
-    manager.exec();
+    // manager.exec();
     return 0;
 }
 

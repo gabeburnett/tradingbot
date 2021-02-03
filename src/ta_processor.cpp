@@ -62,21 +62,37 @@ double dtestCalc(const OHLCV *block, size_t blockIndex) {
 }
 
 void workerThread(std::vector<TAFunction> taFuncs, OHLCV *block, int minTicksForAllTA) {
+    // for (TAFunction ta : taFuncs) {
+    //     std::cout << "thread ta name: " << ta.name << "\n";
+    // }
     for (size_t i = minTicksForAllTA; i < block->maxTicks; i++) {
+        // std::cout << "thread i: " << i << "\n";
         // Stop loop once initialized values are reached
         if (block->open[i] == 0 || i >= block->maxTicks) break;
-        for (const TAFunction &ta : taFuncs) {
+        for (TAFunction ta : taFuncs) {
             double res = ta.func(block, i);      
 
-            // processedMutex.lock();
+            // std::lock_guard<std::mutex> lock(processedMutex);
+            // std::cout << ta.name << " start\n";
+            processedMutex.lock();
+            // std::cout << "hello world i am thread\n";
             // std::cout << "attempting \n";
             // std::cout << "res: " << res << std::endl;
-            processedMap[ta.name].array[i] = res;
 
+            //if break statement not working correctly?
+            //not getting zeroed?
+            //out of bounds forlooop?
+            //incorrect ta.name?
+            
+            // MUST BE RACE CONDITION OR SOMETHINGS WRONG WITH MAP ENTRY/ARRAY??
+            processedMap[ta.name].array[i] = res;
             // std::cout << "res: " << res << " ADDED" << std::endl;
             
-            // processedMutex.unlock();
+            processedMutex.unlock();
+            // break;
+            // std::cout << ta.name << " end\n";
         }
+        // break;
     }
 }
 
@@ -94,10 +110,10 @@ TAProcessor::TAProcessor(std::string unprocessedPath, std::string processedPath,
     this->minTicksForAllTA = minTicksForAllTA;
 
     this->addIndictator("rsi", testCalc);
-    // this->addIndictator("a", atestCalc);
-    // this->addIndictator("b", btestCalc);
-    // this->addIndictator("c", ctestCalc);
-    // this->addIndictator("d", dtestCalc);
+    this->addIndictator("a", atestCalc);
+    this->addIndictator("b", btestCalc);
+    this->addIndictator("c", ctestCalc);
+    this->addIndictator("d", dtestCalc);
     // this->addIndictator("e", testCalc);
     // this->addIndictator("f", testCalc);
     // this->addIndictator("g", testCalc);
@@ -254,6 +270,7 @@ std::vector<OHLCV*> TAProcessor::copyData(size_t copies) {
         newPointer->low = (double*)malloc(sizeof(double) * maxTicks);
         newPointer->close = (double*)malloc(sizeof(double) * maxTicks);
         newPointer->volume = (double*)malloc(sizeof(double) * maxTicks);
+        newPointer->maxTicks = maxTicks;
         
         memcpy(newPointer->open, open, sizeof(double) * maxTicks);
         memcpy(newPointer->high, high, sizeof(double) * maxTicks);
@@ -276,11 +293,12 @@ void TAProcessor::destroyData(std::vector<OHLCV*> pointers) {
         free(pointer);
     }
 
-    // for (auto it : processedMap) {
-    //     free(it.second.array);
-    // }
+    //TODO: move this somewhere after processblock, this causes extra data not to get written to file
+    for (auto it : processedMap) {
+        free(it.second.array);
+    }
 
-    // processedMap.clear();
+    processedMap.clear();
 }
 
 TAProcessor::~TAProcessor() {
@@ -299,6 +317,9 @@ void TAProcessor::processBlock() {
 
     std::vector<std::string> usedFuncs = {};
     std::vector<OHLCV*> dataPointers = copyData(threadSize);
+    
+    processedMutex.lock();
+    
     for (size_t i = 0; i < threadSize; i++) {
         size_t funcs = funcsPerThread;
         if (extraThreadFuncs > 0) {
@@ -326,8 +347,6 @@ void TAProcessor::processBlock() {
                     maxTicks
                 };
 
-                // processedMap[it->first].array[0] = 420;
-
                 // Track functions already assigned and functions left to fetch for current thread.
                 funcs--;
                 usedFuncs.push_back(it->first);
@@ -335,10 +354,10 @@ void TAProcessor::processBlock() {
             it++;
         }
 
-        std::cout << "gen len: " << processedMap.size() << "\n";
-        std::cout << "starting new thread with funcs: " << threadFuncs.size() << "\n";
         threads[i] = std::thread(workerThread, threadFuncs, dataPointers[i], minTicksForAllTA);
     }
+
+    processedMutex.unlock();
 
     for (auto &thread : threads) {
         thread.join();

@@ -23,7 +23,7 @@ class BacktestThread {
          */ 
         BacktestThread(size_t blockSize, size_t minTicks, std::string tickPath, double startBalance);
 
-        /**
+        /** 
          * Deallocates all arrays in tickData.
          */
         ~BacktestThread();
