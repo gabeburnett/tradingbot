@@ -18,20 +18,9 @@ struct DynDoubleArray {
 typedef struct DynDoubleArray DynDoubleArray;
 
 extern std::mutex processedMutex;
-extern std::unordered_map<std::string, DynDoubleArray> processedMap;
+extern std::unordered_map<std::string, double*> processedData;
 
-struct OHLCV {
-    double *open;
-    double *high;
-    double *low;
-    double *close;
-    double *volume;
-    size_t maxTicks;
-};
-
-typedef struct OHLCV OHLCV;
-
-typedef double (*CalculateIndicator) (const OHLCV *block, size_t blockIndex);
+typedef double (*CalculateIndicator) (std::unordered_map<std::string, double*> data, size_t blockIndex);
 
 struct TAFunction {
     std::string name;
@@ -42,32 +31,38 @@ typedef struct TAFunction TAFunction;
 
 class TAProcessor {
     public:
-        TAProcessor(std::string unprocessedPath, std::string processedPath, int minTicksForAllTA, size_t maxTicks);
+        TAProcessor(std::string unprocessedPath, std::string processedPath, size_t minTicks, size_t blockSize);
         ~TAProcessor();
         void addIndictator(std::string taName, CalculateIndicator func);
         void exec();
     
     private:
-        int minTicksForAllTA;
-        double *open;
-        double *high;
-        double *low;
-        double *close;
-        double *volume;
-        size_t maxTicks;
+        size_t minTicks;
+        size_t blockSize;
 
-
+        /**
+         * Stores current block of tickData and processed data.
+         */ 
+        std::unordered_map<std::string, double*> tickData;
         std::unordered_map<std::string, CalculateIndicator> taFuncs;
         std::string unprocessedPath;
         std::string processedPath;
 
-        std::vector<OHLCV*> copyData(size_t copies);
-        void destroyData(std::vector<OHLCV*> pointers);
-        void prepareArray(double *arr);
+        std::vector<std::unordered_map<std::string, double*>> copyData(size_t copies);
+        void destroyData(std::vector<std::unordered_map<std::string, double*>> copies);
         void processBlock();
         void parseFile(std::string path);
-        void clearArrays();
         void prepareNextBlock();
+        
+        /**
+         * Parse header line, assumes its in a CSV like format with , as delimiter.
+         * Initializes arrays for every column with a length of blockSize.
+         * 
+         * @param columnID An address of a map that will be used to store index to string name mappings
+         * of each column.
+         * @param header The header line, usually the first line in a csv file.
+         */
+        void processHeader(std::unordered_map<size_t, std::string> *columnID, std::string header);
         void appendHeader(std::string path);
         void appendProcessedBlock(std::string path);
 };

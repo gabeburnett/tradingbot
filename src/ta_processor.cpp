@@ -5,144 +5,76 @@
 #include <math.h>
 #include <atomic>
 #include <algorithm>
-#include <fstream>
 #include <cstdio>
 
 std::mutex processedMutex;
-std::unordered_map<std::string, DynDoubleArray> processedMap = {};
+std::unordered_map<std::string, double*> processedData = {};
 
-double testCalc(const OHLCV *block, size_t blockIndex) {    
+double testCalc(std::unordered_map<std::string, double*> data, size_t blockIndex) {    
     double outReal = 0;
     int outBegIdx = 0;
     int outNBElement = 0;
-    if (TA_RSI(blockIndex, blockIndex, block->close, 14, &outBegIdx, &outNBElement, &outReal) != TA_SUCCESS) {
+    if (TA_RSI(blockIndex, blockIndex, std::as_const(data["close"]), 14, &outBegIdx, &outNBElement, &outReal) != TA_SUCCESS) {
         throw std::logic_error("Failed to calculate indicator: RSI.");
     }
     return outReal;
 }
 
-double atestCalc(const OHLCV *block, size_t blockIndex) {    
-    double outReal = 0;
-    int outBegIdx = 0;
-    int outNBElement = 0;
-    if (TA_RSI(blockIndex, blockIndex, block->close, 14, &outBegIdx, &outNBElement, &outReal) != TA_SUCCESS) {
-        throw std::logic_error("Failed to calculate indicator: RSI.");
-    }
-    return outReal;
-}
-
-double btestCalc(const OHLCV *block, size_t blockIndex) {    
-    double outReal = 0;
-    int outBegIdx = 0;
-    int outNBElement = 0;
-    if (TA_RSI(blockIndex, blockIndex, block->close, 14, &outBegIdx, &outNBElement, &outReal) != TA_SUCCESS) {
-        throw std::logic_error("Failed to calculate indicator: RSI.");
-    }
-    return outReal;
-}
-
-double ctestCalc(const OHLCV *block, size_t blockIndex) {    
-    double outReal = 0;
-    int outBegIdx = 0;
-    int outNBElement = 0;
-    if (TA_RSI(blockIndex, blockIndex, block->close, 14, &outBegIdx, &outNBElement, &outReal) != TA_SUCCESS) {
-        throw std::logic_error("Failed to calculate indicator: RSI.");
-    }
-    return outReal;
-}
-
-double dtestCalc(const OHLCV *block, size_t blockIndex) {    
-    double outReal = 0;
-    int outBegIdx = 0;
-    int outNBElement = 0;
-    if (TA_RSI(blockIndex, blockIndex, block->close, 14, &outBegIdx, &outNBElement, &outReal) != TA_SUCCESS) {
-        throw std::logic_error("Failed to calculate indicator: RSI.");
-    }
-    return outReal;
-}
-
-void workerThread(std::vector<TAFunction> taFuncs, OHLCV *block, int minTicksForAllTA) {
-    // for (TAFunction ta : taFuncs) {
-    //     std::cout << "thread ta name: " << ta.name << "\n";
-    // }
-    for (size_t i = minTicksForAllTA; i < block->maxTicks; i++) {
-        // std::cout << "thread i: " << i << "\n";
+void workerThread(std::vector<TAFunction> taFuncs, std::unordered_map<std::string, double*> data, size_t minTicks, size_t blockSize) {
+    for (size_t i = minTicks; i < blockSize; i++) {
+        
         // Stop loop once initialized values are reached
-        if (block->open[i] == 0 || i >= block->maxTicks) break;
+        if (data[data.begin()->first][i] == 0) break;
+
         for (TAFunction ta : taFuncs) {
-            double res = ta.func(block, i);      
+            double res = ta.func(data, i);      
 
-            // std::lock_guard<std::mutex> lock(processedMutex);
-            // std::cout << ta.name << " start\n";
             processedMutex.lock();
-            // std::cout << "hello world i am thread\n";
-            // std::cout << "attempting \n";
-            // std::cout << "res: " << res << std::endl;
-
-            //if break statement not working correctly?
-            //not getting zeroed?
-            //out of bounds forlooop?
-            //incorrect ta.name?
-            
-            // MUST BE RACE CONDITION OR SOMETHINGS WRONG WITH MAP ENTRY/ARRAY??
-            processedMap[ta.name].array[i] = res;
-            // std::cout << "res: " << res << " ADDED" << std::endl;
-            
+            processedData[ta.name][i] = res;
             processedMutex.unlock();
-            // break;
-            // std::cout << ta.name << " end\n";
         }
-        // break;
     }
 }
 
-TAProcessor::TAProcessor(std::string unprocessedPath, std::string processedPath, int minTicksForAllTA, size_t maxTicks) {
-    processedMap = {};
-    this->open = (double*)calloc(sizeof(double), maxTicks);
-    this->high = (double*)calloc(sizeof(double), maxTicks);
-    this->low = (double*)calloc(sizeof(double), maxTicks);
-    this->close = (double*)calloc(sizeof(double), maxTicks);
-    this->volume = (double*)calloc(sizeof(double), maxTicks);
-    this->maxTicks = maxTicks;
-
+TAProcessor::TAProcessor(std::string unprocessedPath, std::string processedPath, size_t minTicks, size_t blockSize) {
+    processedData = {};
+    
+    this->blockSize = blockSize;
     this->unprocessedPath = unprocessedPath;
     this->processedPath = processedPath;
-    this->minTicksForAllTA = minTicksForAllTA;
-
+    this->minTicks = minTicks;
+    this->tickData = {};
+    
     this->addIndictator("rsi", testCalc);
-    this->addIndictator("a", atestCalc);
-    this->addIndictator("b", btestCalc);
-    this->addIndictator("c", ctestCalc);
-    this->addIndictator("d", dtestCalc);
-    // this->addIndictator("e", testCalc);
-    // this->addIndictator("f", testCalc);
-    // this->addIndictator("g", testCalc);
-    // this->addIndictator("h", testCalc);
-    // this->addIndictator("i", testCalc);
+}
+
+void TAProcessor::processHeader(std::unordered_map<size_t, std::string> *columnID, std::string header) {
+    std::vector<std::string> names = {};
+    split(&names, header, ',', false);
+    for (size_t i = 0; i < names.size(); i++) {
+        std::string name = names[i];
+        (*columnID)[i] = name;
+        
+        double* column = (double*)calloc(sizeof(double), blockSize);
+        tickData[name] = column;
+    }
 }
 
 void TAProcessor::addIndictator(std::string taName, CalculateIndicator func) {
     taFuncs[taName] = func;
-}
-
-void TAProcessor::prepareArray(double *arr) {
-    int startCopyIndex = maxTicks - minTicksForAllTA;
-    memcpy(arr, arr + startCopyIndex, sizeof(double) * minTicksForAllTA);
-    memset(arr + minTicksForAllTA, 0x00, sizeof(double) * (maxTicks - minTicksForAllTA));
+    processedData[taName] = (double*)calloc(sizeof(double), blockSize);
 }
 
 void TAProcessor::prepareNextBlock() {
-    prepareArray(open);
-    prepareArray(high);
-    prepareArray(low);
-    prepareArray(close);
-    prepareArray(volume);
-
-    for (auto it : processedMap) {
-        memset(it.second.array, 0x00, it.second.length);
+    for (auto it : tickData) {
+        int startCopyIndex = blockSize - minTicks;
+        memcpy(it.second, it.second + startCopyIndex, sizeof(double) * minTicks);
+        memset(it.second + minTicks, 0x00, sizeof(double) * (blockSize - minTicks));
     }
 
-    processedMap.clear();
+    for (auto it : processedData) {
+        memset(it.second, 0x00, sizeof(double) * blockSize);
+    }
 }
 
 void appendLineToFile(std::string filepath, std::string line)
@@ -154,7 +86,7 @@ void appendLineToFile(std::string filepath, std::string line)
     if (file.fail())
         throw std::ios_base::failure(std::strerror(errno));
 
-    //make sure write fails with exception if something is wrong
+    // Make sure write fails with exception if something is wrong
     file.exceptions(file.exceptions() | std::ios::failbit | std::ifstream::badbit);
 
     file << line << std::endl;
@@ -166,17 +98,22 @@ void TAProcessor::appendHeader(std::string path) {
 
     file.open(path, std::ios::out | std::ios::app);
     if (file.fail()) throw std::ios_base::failure(std::strerror(errno));    
-
     file.exceptions(file.exceptions() | std::ios::failbit | std::ifstream::badbit);
 
-    ss << "open,high,low,close,volume";
-
-    for (auto it : processedMap) {
+    // Append tick data and processed column names
+    for (auto it : tickData) {
+        if (ss.str().empty()) {
+            ss << it.first;
+        } else {
+            ss << "," << it.first;
+        }
+    }
+    for (auto it : processedData) {
         ss << "," << it.first;
     }
 
+    // Write to file
     file << ss.str() << "\r\n";
-
     file.close();
 }
 
@@ -189,12 +126,17 @@ void TAProcessor::appendProcessedBlock(std::string path) {
 
     file.exceptions(file.exceptions() | std::ios::failbit | std::ifstream::badbit);
 
-    for (size_t tick = minTicksForAllTA; tick < maxTicks; tick++) {
-        ss << open[tick] << "," << high[tick] << "," << low[tick] << "," << close[tick] << "," << volume[tick];
-        
-        for (auto it : processedMap) {
-            if (it.second.length < tick) continue;
-            ss << "," << it.second.array[tick];
+    for (size_t tick = minTicks; tick < blockSize; tick++) {        
+        for (auto it : tickData) {
+            if (ss.str().empty()) {
+                ss << it.second[tick];
+            } else {
+                ss << "," << it.second[tick];
+            }
+        }
+
+        for (auto it : processedData) {
+            ss << "," << it.second[tick];
         }
 
         file << ss.str() << "\r\n";
@@ -206,20 +148,27 @@ void TAProcessor::appendProcessedBlock(std::string path) {
 }
 
 void TAProcessor::parseFile(std::string path) {
-    //TODO: Delete processed file if exitsts
     std::string processedPath = std::string("./processed/") + std::string(std::filesystem::path(path).filename());
+
     std::remove(processedPath.c_str());
     std::filesystem::create_directory("./processed");
+    
     std::ifstream infile(path);
     std::string line;
+    std::unordered_map<size_t, std::string> columnID = {};
     std::vector<std::string> arr = {};
     size_t blockIndex = 0;
     bool hasHeader = false;
     while(std::getline(infile, line)) {
-        if (blockIndex == maxTicks) {
-            // Process current block (OHLCV arrays)
+        if (columnID.size() == 0) {
+            processHeader(&columnID, line);
+        }
+
+        if (blockIndex == blockSize) {
+            // Process current block (tickData)
+            // Create copies of tickData for threads
             processBlock();
-            blockIndex = minTicksForAllTA;
+            blockIndex = minTicks;
             
             // Add header with OHCLV and TA names in the correct order.
             if (!hasHeader) {
@@ -234,25 +183,19 @@ void TAProcessor::parseFile(std::string path) {
             continue;
         }
 
-        if (split(&arr, line, ',', true) && arr.size() == 6) {
-            open[blockIndex] = std::stod(arr[1]);
-            high[blockIndex] = std::stod(arr[2]);
-            low[blockIndex] = std::stod(arr[3]);
-            close[blockIndex] = std::stod(arr[4]);
-            volume[blockIndex] = std::stod(arr[5]);
+        if (split(&arr, line, ',', true) && arr.size() == tickData.size()) {
+            for (auto it : columnID) {
+                tickData[it.second][blockIndex] = std::stod(arr[it.first]);
+            }
             blockIndex++;
-            // std::cout << "loading: " << blockIndex << "\n";
         }
     }
     infile.close();
-}
-
-void TAProcessor::clearArrays() {
-    memset(open, 0x00, sizeof(double) * maxTicks);
-    memset(high, 0x00, sizeof(double) * maxTicks);
-    memset(low, 0x00, sizeof(double) * maxTicks);
-    memset(close, 0x00, sizeof(double) * maxTicks);
-    memset(volume, 0x00, sizeof(double) * maxTicks);
+    
+    for (auto it : tickData) {
+        free(it.second);
+    }
+    tickData.clear();
 }
 
 void TAProcessor::exec() {
@@ -261,52 +204,34 @@ void TAProcessor::exec() {
     }
 }
 
-std::vector<OHLCV*> TAProcessor::copyData(size_t copies) {
-    std::vector<OHLCV*> pointers = {};
+std::vector<std::unordered_map<std::string, double*>> TAProcessor::copyData(size_t copies) {
+    std::vector<std::unordered_map<std::string, double*>> data = {};
     for (size_t i = 0; i < copies; i++) {
-        OHLCV* newPointer = (OHLCV*)malloc(sizeof(OHLCV));
-        newPointer->open = (double*)malloc(sizeof(double) * maxTicks);
-        newPointer->high = (double*)malloc(sizeof(double) * maxTicks);
-        newPointer->low = (double*)malloc(sizeof(double) * maxTicks);
-        newPointer->close = (double*)malloc(sizeof(double) * maxTicks);
-        newPointer->volume = (double*)malloc(sizeof(double) * maxTicks);
-        newPointer->maxTicks = maxTicks;
-        
-        memcpy(newPointer->open, open, sizeof(double) * maxTicks);
-        memcpy(newPointer->high, high, sizeof(double) * maxTicks);
-        memcpy(newPointer->low, low, sizeof(double) * maxTicks);
-        memcpy(newPointer->close, close, sizeof(double) * maxTicks);
-        memcpy(newPointer->volume, volume, sizeof(double) * maxTicks);
-        
-        pointers.push_back(newPointer);
+        std::unordered_map<std::string, double*> copy = {};
+        for (auto it : tickData) {
+            copy[it.first] = (double*)malloc(sizeof(double) * blockSize);
+            memcpy(copy[it.first], it.second, sizeof(double) * blockSize);
+        }
+        data.push_back(copy);
     }
-    return pointers;
+    return data;
 }
 
-void TAProcessor::destroyData(std::vector<OHLCV*> pointers) {
-    for (auto pointer : pointers) {
-        free(pointer->open);
-        free(pointer->high);
-        free(pointer->low);
-        free(pointer->close);
-        free(pointer->volume);
-        free(pointer);
+ void TAProcessor::destroyData(std::vector<std::unordered_map<std::string, double*>> copies) {
+    for (auto copy : copies) {
+        for (auto it : copy) {
+            free(it.second);
+        }
     }
-
-    //TODO: move this somewhere after processblock, this causes extra data not to get written to file
-    for (auto it : processedMap) {
-        free(it.second.array);
-    }
-
-    processedMap.clear();
 }
 
 TAProcessor::~TAProcessor() {
-    free(this->open);
-    free(this->high);
-    free(this->low);
-    free(this->close);
-    free(this->volume);
+    for (auto it : tickData) {
+        free(it.second);
+    }
+    for (auto it : processedData) {
+        free(it.second);
+    }
 }
 
 void TAProcessor::processBlock() {
@@ -316,7 +241,7 @@ void TAProcessor::processBlock() {
     std::thread threads[threadSize];
 
     std::vector<std::string> usedFuncs = {};
-    std::vector<OHLCV*> dataPointers = copyData(threadSize);
+    std::vector<std::unordered_map<std::string, double*>> dataPointers = copyData(threadSize);
     
     processedMutex.lock();
     
@@ -338,14 +263,6 @@ void TAProcessor::processBlock() {
                     it->first,
                     it->second
                 });
-                
-                // Init TA result array
-                double *results = (double*)calloc(sizeof(double), maxTicks);
-     
-                processedMap[it->first] = {
-                    results,
-                    maxTicks
-                };
 
                 // Track functions already assigned and functions left to fetch for current thread.
                 funcs--;
@@ -354,7 +271,7 @@ void TAProcessor::processBlock() {
             it++;
         }
 
-        threads[i] = std::thread(workerThread, threadFuncs, dataPointers[i], minTicksForAllTA);
+        threads[i] = std::thread(workerThread, threadFuncs, dataPointers[i], minTicks, blockSize);
     }
 
     processedMutex.unlock();
