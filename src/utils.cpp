@@ -1,9 +1,8 @@
 #include "utils.hpp"
 #include <fstream>
 
-// way faster than regex
-bool isDouble(std::string myString) {
-    std::istringstream iss(myString);
+bool isDouble(std::string str) {
+    std::istringstream iss(str);
     double f;
     iss >> std::noskipws >> f; // noskipws considers leading whitespace invalid
     // Check the entire string was consumed and if either failbit or badbit is set
@@ -27,4 +26,21 @@ bool split(std::vector<std::string> *values, std::string str, char delimiter, bo
     }
     
     return true;
+}
+
+void appendLineToFile(std::string filePath, std::string line)
+{
+    std::ofstream file;
+    //can't enable exception now because of gcc bug that raises ios_base::failure with useless message
+    //file.exceptions(file.exceptions() | std::ios::failbit);
+    file.open(filePath, std::ios::out | std::ios::app);
+    if (file.fail())
+        throw std::ios_base::failure(std::strerror(errno));
+
+    // Make sure write fails with exception if something is wrong
+    file.exceptions(file.exceptions() | std::ios::failbit | std::ifstream::badbit);
+
+    file << line << std::endl;
+
+    file.close();
 }

@@ -36,12 +36,12 @@ void workerThread(std::vector<TAFunction> taFuncs, std::unordered_map<std::strin
     }
 }
 
-TAProcessor::TAProcessor(std::string unprocessedPath, std::string processedPath, size_t minTicks, size_t blockSize) {
+TAProcessor::TAProcessor(std::string unprocessedDir, std::string processedDir, size_t minTicks, size_t blockSize) {
     processedData = {};
     
     this->blockSize = blockSize;
-    this->unprocessedPath = unprocessedPath;
-    this->processedPath = processedPath;
+    this->unprocessedDir = unprocessedDir + "/";
+    this->processedDir = processedDir + "/";
     this->minTicks = minTicks;
     this->tickData = {};
     
@@ -77,22 +77,7 @@ void TAProcessor::prepareNextBlock() {
     }
 }
 
-void appendLineToFile(std::string filepath, std::string line)
-{
-    std::ofstream file;
-    //can't enable exception now because of gcc bug that raises ios_base::failure with useless message
-    //file.exceptions(file.exceptions() | std::ios::failbit);
-    file.open(filepath, std::ios::out | std::ios::app);
-    if (file.fail())
-        throw std::ios_base::failure(std::strerror(errno));
-
-    // Make sure write fails with exception if something is wrong
-    file.exceptions(file.exceptions() | std::ios::failbit | std::ifstream::badbit);
-
-    file << line << std::endl;
-}
-
-void TAProcessor::appendHeader(std::string path) {
+void TAProcessor::writeHeader(std::string path) {
     std::ofstream file;
     std::stringstream ss;
 
@@ -100,7 +85,7 @@ void TAProcessor::appendHeader(std::string path) {
     if (file.fail()) throw std::ios_base::failure(std::strerror(errno));    
     file.exceptions(file.exceptions() | std::ios::failbit | std::ifstream::badbit);
 
-    // Append tick data and processed column names
+    // Append original tick data and processed column names
     for (auto it : tickData) {
         if (ss.str().empty()) {
             ss << it.first;
@@ -112,7 +97,6 @@ void TAProcessor::appendHeader(std::string path) {
         ss << "," << it.first;
     }
 
-    // Write to file
     file << ss.str() << "\r\n";
     file.close();
 }
@@ -123,7 +107,6 @@ void TAProcessor::appendProcessedBlock(std::string path) {
 
     file.open(path, std::ios::out | std::ios::app);
     if (file.fail()) throw std::ios_base::failure(std::strerror(errno));    
-
     file.exceptions(file.exceptions() | std::ios::failbit | std::ifstream::badbit);
 
     for (size_t tick = minTicks; tick < blockSize; tick++) {        
@@ -147,18 +130,22 @@ void TAProcessor::appendProcessedBlock(std::string path) {
     file.close();
 }
 
-void TAProcessor::parseFile(std::string path) {
-    std::string processedPath = std::string("./processed/") + std::string(std::filesystem::path(path).filename());
-
+void TAProcessor::processFile(std::string path) {
+    std::string processedPath = processedDir + std::string(std::filesystem::path(path).filename());
+    // Remove old processed file, make sure directory exists.
     std::remove(processedPath.c_str());
-    std::filesystem::create_directory("./processed");
+    std::filesystem::create_directory(processedDir);
     
     std::ifstream infile(path);
     std::string line;
+
+    // Matches order of parsed string to column name.
     std::unordered_map<size_t, std::string> columnID = {};
-    std::vector<std::string> arr = {};
+    // Stores the parsed line strings
+    std::vector<std::string> lineSplit = {};
+
     size_t blockIndex = 0;
-    bool hasHeader = false;
+    bool hasProcessedHeader = false;
     while(std::getline(infile, line)) {
         if (columnID.size() == 0) {
             processHeader(&columnID, line);
@@ -166,15 +153,15 @@ void TAProcessor::parseFile(std::string path) {
 
         if (blockIndex == blockSize) {
             // Process current block (tickData)
-            // Create copies of tickData for threads
             processBlock();
             blockIndex = minTicks;
             
-            // Add header with OHCLV and TA names in the correct order.
-            if (!hasHeader) {
-                appendHeader(processedPath);
-                hasHeader = true;
+            // Add header with original tick data and TA column names
+            if (!hasProcessedHeader) {
+                writeHeader(processedPath);
+                hasProcessedHeader = true;
             }
+
             // Append results to file
             appendProcessedBlock(processedPath);
 
@@ -183,24 +170,31 @@ void TAProcessor::parseFile(std::string path) {
             continue;
         }
 
-        if (split(&arr, line, ',', true) && arr.size() == tickData.size()) {
+        if (split(&lineSplit, line, ',', true) && lineSplit.size() == tickData.size()) {
             for (auto it : columnID) {
-                tickData[it.second][blockIndex] = std::stod(arr[it.first]);
+                tickData[it.second][blockIndex] = std::stod(lineSplit[it.first]);
             }
             blockIndex++;
         }
     }
-    infile.close();
+
+    // Process remainder ticks.
+    processBlock();            
+    if (!hasProcessedHeader) writeHeader(processedPath);
+    appendProcessedBlock(processedPath);
+    
     
     for (auto it : tickData) {
         free(it.second);
     }
+
+    infile.close();
     tickData.clear();
 }
 
 void TAProcessor::exec() {
-    for (const auto & entry : std::filesystem::directory_iterator("./unprocessed")) {
-        parseFile(entry.path());
+    for (const auto & entry : std::filesystem::directory_iterator(unprocessedDir)) {
+        processFile(entry.path());
     }
 }
 
@@ -235,8 +229,11 @@ TAProcessor::~TAProcessor() {
 }
 
 void TAProcessor::processBlock() {
+    // Minimum functions per hardware thread
     const size_t funcsPerThread = floor(taFuncs.size() / std::thread::hardware_concurrency());
+    // Remainder functions that need to be allocated to an existing thread
     size_t extraThreadFuncs = taFuncs.size() % std::thread::hardware_concurrency();
+    
     const size_t threadSize = funcsPerThread > 0 ? std::thread::hardware_concurrency() : extraThreadFuncs; 
     std::thread threads[threadSize];
 

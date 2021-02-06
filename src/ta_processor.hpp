@@ -52,7 +52,7 @@ class TAProcessor {
          * @param minTicks Minimum ticks needed for all TA functions to operate.
          * @param blockSize Length of all TA processor arrays, aka the length of each chunk of data.
          */
-        TAProcessor(std::string unprocessedPath, std::string processedPath, size_t minTicks, size_t blockSize);
+        TAProcessor(std::string unprocessedDir, std::string processedDir, size_t minTicks, size_t blockSize);
         
         /**
          * Deallocate any tickData or processedData arrays.
@@ -93,12 +93,12 @@ class TAProcessor {
         /**
          * Path to directory containing unprocessed symbol files.
          */
-        std::string unprocessedPath;
+        std::string unprocessedDir;
 
         /**
          * Path to directory where processed symbol files will be stored.
          */
-        std::string processedPath;
+        std::string processedDir;
 
         /**
          * Parse header line, assumes its in a CSV like format with , as delimiter.
@@ -110,13 +110,52 @@ class TAProcessor {
          */
         void processHeader(std::unordered_map<size_t, std::string> *columnID, std::string header);
 
+        /**
+         * Create multiple copies of tickData, so each thread has it's own copy of tick data.
+         * 
+         * @param copies How many copies of tickData.
+         * @returns A list of key-value pairs containing the column and its data array.
+         */
         std::vector<std::unordered_map<std::string, double*>> copyData(size_t copies);
-        void destroyData(std::vector<std::unordered_map<std::string, double*>> copies);
-        void processBlock();
-        void parseFile(std::string path);
-        void prepareNextBlock();
-        void appendHeader(std::string path);
+
+        /**
+         * Write header to file using original and processed data column names.
+         * 
+         * @param path File path to write to.
+         */
+        void writeHeader(std::string path);
+
+        /**
+         * Appends original tick data and processed data in the current block to the given path.
+         * 
+         * @param path File path where the block gets written to.
+         */
         void appendProcessedBlock(std::string path);
+
+        /**
+         * Deallocates given arrays, after a block has been processed and all 
+         * its threads have joined.
+         * 
+         * @param copies List of key-value pairs of column name and its data array.
+         */
+        void destroyData(std::vector<std::unordered_map<std::string, double*>> copies);
+        
+        /**
+         * Calculates needed threads, assigns TA functions and copied tick data, and launches the threads for TA processing.
+         */ 
+        void processBlock();
+
+        /**
+         * Moves min ticks to begining of tickData arrays, and zeros processedData and tickData arrays as well.
+         */ 
+        void prepareNextBlock();
+
+        /**
+         * Manages the processing of a file, in blocks.
+         * 
+         * @param path File to process.
+         */
+        void processFile(std::string path);
 };
 
 #endif
