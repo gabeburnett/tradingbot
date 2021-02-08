@@ -41,7 +41,7 @@ class TestAlgo: public BacktestThread {
 Running your algorithm:
 1. Access backtest manager class.
 2. Add symbols and their processed file paths.
-3. Create instances from your algorithm class.
+3. Create instances of your algorithm class.
 4. Start backtesting.
 
 ```
