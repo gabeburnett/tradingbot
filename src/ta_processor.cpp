@@ -111,10 +111,17 @@ void TAProcessor::appendProcessedBlock(std::string path) {
 
     for (size_t tick = minTicks; tick < blockSize; tick++) {        
         for (auto it : tickData) {
+            auto num = it.second[tick];
+
+            if (num == 0) {
+                file.close();
+                return;
+            }
+            
             if (ss.str().empty()) {
-                ss << it.second[tick];
+                ss << num;
             } else {
-                ss << "," << it.second[tick];
+                ss << "," << num;
             }
         }
 

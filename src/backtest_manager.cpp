@@ -1,5 +1,9 @@
 #include "./backtest_manager.hpp"
 
+std::mutex summaryMutex;
+
+std::vector<std::string> summary = {};
+
 BacktestThread::BacktestThread(size_t blockSize, size_t minTicks, std::string tickPath, double startBalance) {
     this->blockSize = blockSize;
     this->minTicks = minTicks;
@@ -71,8 +75,7 @@ void BacktestThread::run() {
 }
 
 
-BacktestManager::BacktestManager(int minTicks) {
-    this->minTicks = minTicks;
+BacktestManager::BacktestManager() {
     tickPaths = {};
 }
 

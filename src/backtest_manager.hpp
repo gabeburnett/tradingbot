@@ -10,7 +10,14 @@
 #include <fstream>
 #include <vector>
 #include "utils.hpp"
+#include <mutex>
 
+extern std::mutex summaryMutex;
+extern std::vector<std::string> summary;
+
+/**
+ * Provides basic structure for backtesting an algorithm, including 
+ */
 class BacktestThread {
     public:
         /**
@@ -54,12 +61,6 @@ class BacktestThread {
         virtual bool sell() = 0;
     
     private:
-        /**
-         * The length of arrays used to store tick data, this must be more than minTicks.
-         * For large datasets, its recommended to use a large blockSize, such as 10-100k or more.
-         */
-        size_t blockSize;
-
         /**
          * Minimum ticks needed for the algorithm to function.
          */
@@ -107,6 +108,12 @@ class BacktestThread {
         double balance;
 
         /**
+         * The length of arrays used to store tick data, this must be more than minTicks.
+         * For large datasets, its recommended to use a large blockSize, such as 10-100k or more.
+         */
+        size_t blockSize;
+
+        /**
          * The index of the latest tick for all arrays in tickData.
          */
         size_t index;
@@ -116,7 +123,7 @@ class BacktestThread {
 
 class BacktestManager {
     public:
-        BacktestManager(int minTicks);
+        BacktestManager();
         void addPath(std::string symbol, std::string path);
 
         template <class T> void createInstances() {
@@ -129,7 +136,6 @@ class BacktestManager {
 
         void exec();
     private:
-        int minTicks;
         std::queue<BacktestThread*> threadInstances;
         std::unordered_map<std::string, std::string> tickPaths;
 };
