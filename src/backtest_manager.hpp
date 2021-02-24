@@ -8,12 +8,55 @@
 #include <iostream>
 #include <exception>
 #include <fstream>
+#include <filesystem>
 #include <vector>
 #include "utils.hpp"
 #include <mutex>
 
-extern std::mutex summaryMutex;
-extern std::vector<std::string> summary;
+extern std::mutex LogManagerMutex;
+
+/**
+ * Responsible for managing logging from multiple threads via a queue.
+ */
+class LogManager {
+    public:
+        /**
+         * Get the Singleton instance.
+         */
+        static LogManager* getInstance() {
+            static LogManager instance;
+            return &instance;
+        }
+
+        /**
+         * Sets the log file path, and whether you can to append to an already existing file or overwrite it.
+         */
+        void setFilePath(std::string path, bool append);
+
+        /**
+         * Writes a string to the log.
+         * Throws a logic error if no file path has been set.
+         * 
+         * @param line Important infomation to log.
+         */
+        void write(std::string str);
+
+        /**
+         * Writes the entire queue to the log file.
+         */
+        void processQueue();
+    private:
+        /**
+         * Contains all the strings waiting to be written to a file.
+         */
+        std::queue<std::string> logQueue;
+
+        /**
+         * Path to the log file.
+         */
+        std::string logPath;
+};
+
 
 /**
  * Provides basic structure for backtesting an algorithm, including 
@@ -25,16 +68,22 @@ class BacktestThread {
          * 
          * @param blockSize Length of tick data arrays.
          * @param minTicks Minimum ticks needed for the algorithm to operate.
-         * @param tickPath Path to a processed file containing a header and OHLC + TA data.
          * @param startBalance Initial starting balanace.
          */ 
-        BacktestThread(size_t blockSize, size_t minTicks, std::string tickPath, double startBalance);
+        BacktestThread(size_t blockSize, size_t minTicks, double startBalance);
 
         /** 
          * Deallocates all arrays in tickData.
          */
         ~BacktestThread();
         
+        /**
+         * Sets the file path containing all the useful tick data which will be feed into the algorithm.
+         * 
+         * @param tickPath Path to a processed file containing a header and OHLC + TA data.
+         */
+        void setTickPath(std::string path);
+
         /**
          * Thread function, reads data from the file, manages each block and 
          * triggers algorithm functions.
@@ -95,12 +144,6 @@ class BacktestThread {
          * Every array has a length of blockSize.
          */
         std::unordered_map<std::string, double*> tickData;
-        
-        /**
-         * Contains current open positions, 
-         * key = buy-in price and value = quantity brought.
-         */
-        std::unordered_map<double, double> openPositions;
 
         /**
          * Available balance for buying positions.
@@ -117,27 +160,60 @@ class BacktestThread {
          * The index of the latest tick for all arrays in tickData.
          */
         size_t index;
-
-        
 };
 
+/**
+ * Responsible for creating and assigning threads to symbols, for algorithmic processing.
+ */
 class BacktestManager {
     public:
-        BacktestManager();
+        /**
+         * Get the Singleton instance.
+         */
+        static BacktestManager* getInstance() {
+            static BacktestManager instance;
+            return &instance;
+        }
+
+        /**
+         * Add a symbol with a path to the file created by TAProcessor.
+         */
         void addPath(std::string symbol, std::string path);
 
+        /**
+         * Creates an instance of your algorithm class, which should be a child of the BacktestThread class.
+         */
         template <class T> void createInstances() {
             threadInstances = {};
             for (auto it : tickPaths) {
-                BacktestThread* instance = new T(it.second);
+                BacktestThread* instance = new T();
+                instance->setTickPath(it.second);
                 threadInstances.push(instance);
             }
         }
 
+        /**
+         * Assigns an instance of the algorithm class to a thread, then waits for all threads to finish computation.
+         * 
+         * Note: The createInstances function, must be ran exactly once, before this function.
+         */
         void exec();
     private:
+        /**
+         * A queue containing all algorithm class instances
+         */
         std::queue<BacktestThread*> threadInstances;
+
+        /**
+         * A map containing symbol names and a path to their processed file.
+         */
         std::unordered_map<std::string, std::string> tickPaths;
+
+
+        /**
+         * Initializes local variables.
+         */
+        BacktestManager();
 };
 
 #endif

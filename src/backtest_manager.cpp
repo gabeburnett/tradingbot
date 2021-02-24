@@ -1,15 +1,46 @@
 #include "./backtest_manager.hpp"
 
-std::mutex summaryMutex;
+std::mutex LogManagerMutex;
 
-std::vector<std::string> summary = {};
+void LogManager::setFilePath(std::string path, bool append) {
+    this->logPath = path;
 
-BacktestThread::BacktestThread(size_t blockSize, size_t minTicks, std::string tickPath, double startBalance) {
+    // Delete file
+    if (!append) {
+        std::filesystem::remove(path);
+    }
+}
+
+void LogManager::write(std::string str) {
+    if (logPath.empty()) throw std::logic_error("Log path not set.");
+    
+    if (logQueue.size() >= 20) {
+        processQueue();
+    }
+    logQueue.push(str);
+}
+
+void LogManager::processQueue() {
+    if (logPath.empty()) return;
+
+    std::ofstream file;
+
+    file.open(logPath, std::ios::out | std::ios::app);
+    if (file.fail()) throw std::ios_base::failure(std::strerror(errno));    
+    file.exceptions(file.exceptions() | std::ios::failbit | std::ifstream::badbit);
+
+    while (!logQueue.empty()) {
+        file << logQueue.front() << "\r\n";
+        logQueue.pop();
+    }
+
+    file.close();
+}
+
+BacktestThread::BacktestThread(size_t blockSize, size_t minTicks, double startBalance) {
     this->blockSize = blockSize;
     this->minTicks = minTicks;
-    this->tickPath = tickPath;
     this->tickData = {};
-    this->openPositions = {};
     this->balance = startBalance;
 }
 
@@ -17,6 +48,10 @@ BacktestThread::~BacktestThread() {
     for (auto it : tickData) {
         free(it.second);
     }
+}
+
+void BacktestThread::setTickPath(std::string path) {
+    this->tickPath = tickPath;
 }
 
 void BacktestThread::processHeader(std::unordered_map<size_t, std::string> *columnID, std::string header) {
@@ -67,13 +102,15 @@ void BacktestThread::run() {
             for (size_t i = 0; i < values.size(); i++) {
                 tickData[columnID[i]][index] = std::stod(values[i]);
             }
+
+            riskStrategy(buy(), sell());
+            
             index++;
         }
     }
 
     infile.close();
 }
-
 
 BacktestManager::BacktestManager() {
     tickPaths = {};
@@ -103,4 +140,8 @@ void BacktestManager::exec() {
     for (auto &thread : threads) {
         thread.join();
     }
+
+    // Write queued strings to file.
+    LogManager *logManager = LogManager::getInstance();
+    logManager->processQueue();
 }
